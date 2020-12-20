@@ -324,9 +324,9 @@ The Dracut glue already saves and restores the root filesystem contents whenever
 
 Similar to the root filesystem, the Dracut glue will save and restore the contents of `/boot` whenever the config specifies a filesystem labeled `boot` with `wipeFilesystem` set to `true`.
 
-GRUB includes a module for reading MD-RAID volumes.  However, the shipped boot sector is hardcoded to set `prefix` to the first boot disk, and we want to replicate the boot sector via a bit-for-bit copy (see below).  Therefore, we'll create the RAID volume with metadata format 1.0, which puts the RAID superblock at the end of the partition.  This allows GRUB to treat individual `/boot` replicas as independent filesystems, provided that the RAID module is _not_ preloaded into the BIOS boot partition.  (It currently is not.)
+GRUB includes a module for reading MD-RAID volumes, and we want to use it, since it will read from any available replica.  However, the shipped boot sector is hardcoded to set `prefix` to the first boot disk, and we want to replicate the boot sector via a bit-for-bit copy (see below).  For now, we'll create the RAID volume with metadata format 1.0, which puts the RAID superblock at the end of the partition, and allows GRUB to treat individual `/boot` replicas as independent filesystems.  We'll modify the GRUB configs so UEFI boot always treats `/boot` as a RAID, and BIOS boot treats it as a RAID after the `normal` module and `grub.cfg` are loaded.  That leaves a window during BIOS boots where boot will fail if the first enumerated device doesn't work.  Once bootupd knows how to update BIOS GRUB, we can close the vulnerability window by having bootupd reinstall GRUB during the first boot (see [coreos/fedora-coreos-tracker#702](https://github.com/coreos/fedora-coreos-tracker/issues/702)).
 
-`/boot` replication prevents the use of the grubenv mechanism.  If GRUB treats the replicas as independent filesystems, grubenv will cause the RAID to desynchronize.  Alternatively, if we were to use the GRUB RAID module, GRUB would [disable grubenv support](https://www.gnu.org/software/grub/manual/grub/grub.html#Environment-block).
+`/boot` replication prevents the use of the grubenv mechanism, as GRUB [disables grubenv support](https://www.gnu.org/software/grub/manual/grub/grub.html#Environment-block) when RAID is in use.
 
 ## EFI System Partition
 
@@ -344,7 +344,7 @@ The Dracut glue will save an image of the BIOS boot partition whenever the confi
 
 The BIOS Boot partition is not updated at runtime, so RAID is not necessary.  When updating the bootloader, bootupd will need to find each BIOS Boot type GUID and update both the partition and the corresponding boot sector.  This assumes that the system is not dual-booting and belongs entirely to CoreOS.
 
-For simplicity, we're copying the BIOS Boot partition and boot sector bit-for-bit, rather than rerunning `grub-install` from the initrd or hand-modifying the boot sector.  Since the boot sector hardcodes the offset of the BIOS Boot partition, the latter must be recreated at the same offset as the original partition.  To avoid hardcoding an awkward constant in FCCT, we'll move the BIOS boot partition from its current offset of 512 MiB to the beginning of the disk (offset 1 MiB) in new images.  The Dracut glue will detect relocation of the BIOS boot partition and fail the boot.
+We're currently copying the BIOS Boot partition and boot sector bit-for-bit, rather than rerunning `grub-install` from the initrd or hand-modifying the boot sector.  Since the boot sector hardcodes the offset of the BIOS Boot partition, the latter must be recreated at the same offset as the original partition.  To avoid hardcoding an awkward constant in FCCT, we'll move the BIOS boot partition from its current offset of 512 MiB to the beginning of the disk (offset 1 MiB) in new images.  The Dracut glue will detect relocation of the BIOS boot partition and fail the boot.
 
 There's no BIOS boot partition in 4Kn images.  We could work around this, but to reduce the test matrix, we'll add an empty BIOS boot partition to the 4Kn image.
 
