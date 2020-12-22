@@ -5,7 +5,7 @@
 Users can write FCC sugar that enables redundant boot and/or an encrypted root volume.  There are three cases:
 
 1. The sugar only specifies encrypted root.  FCCT desugars the section into a LUKS volume within the existing root partition, and a root filesystem layered on top.
-2. The sugar only specifies redundant boot.  FCCT desugars the section into an Ignition config which completely recreates the partition structure on each specified disk.  The config creates partitions, RAID volumes, and filesystems for the root, boot, and ESP partitions, and partitions for each BIOS-BOOT replica.
+2. The sugar only specifies redundant boot.  FCCT desugars the section into an Ignition config which completely recreates the partition structure on each specified disk.  The config creates partitions, RAID volumes, and filesystems for the root and boot partitions; partitions and independent filesystems for each ESP replica; and partitions for each BIOS-BOOT replica.
 3. The sugar specifies both.  FCCT desugars similarly to the second case, with the addition of a LUKS volume.
 
 If redundant boot is specified, Dracut glue detects the corresponding config stanzas, saves the corresponding on-disk data to RAM before the Ignition disks phase, and restores it after disks phase completes.  The glue also replicates the boot sector when replicating BIOS-BOOT.
@@ -139,15 +139,21 @@ The sugar does not support advanced features such as RAID spares, RAID levels ot
     ],
     "filesystems": [
       {
-        "device": "/dev/md/md-boot",
-        "format": "ext4",
-        "label": "boot",
+        "device": "/dev/disk/by-partlabel/esp-1",
+        "format": "vfat",
+        "label": "esp-1",
         "wipeFilesystem": true
       },
       {
-        "device": "/dev/md/md-esp",
+        "device": "/dev/disk/by-partlabel/esp-2",
         "format": "vfat",
-        "label": "EFI-SYSTEM",
+        "label": "esp-2",
+        "wipeFilesystem": true
+      },
+      {
+        "device": "/dev/md/md-boot",
+        "format": "ext4",
+        "label": "boot",
         "wipeFilesystem": true
       },
       {
@@ -165,17 +171,6 @@ The sugar does not support advanced features such as RAID spares, RAID levels ot
         ],
         "level": "raid1",
         "name": "md-boot",
-        "options": [
-          "--metadata=1.0"
-        ]
-      },
-      {
-        "devices": [
-          "/dev/disk/by-partlabel/esp-1",
-          "/dev/disk/by-partlabel/esp-2"
-        ],
-        "level": "raid1",
-        "name": "md-esp",
         "options": [
           "--metadata=1.0"
         ]
@@ -261,9 +256,15 @@ Each of root, boot, ESP, and BIOS-BOOT is placed on a separate partition.  MD-RA
     ],
     "filesystems": [
       {
-        "device": "/dev/md/md-esp",
+        "device": "/dev/disk/by-partlabel/esp-1",
         "format": "vfat",
-        "label": "EFI-SYSTEM",
+        "label": "esp-1",
+        "wipeFilesystem": true
+      },
+      {
+        "device": "/dev/disk/by-partlabel/esp-2",
+        "format": "vfat",
+        "label": "esp-2",
         "wipeFilesystem": true
       },
       {
@@ -291,17 +292,6 @@ Each of root, boot, ESP, and BIOS-BOOT is placed on a separate partition.  MD-RA
       }
     ],
     "raid": [
-      {
-        "devices": [
-          "/dev/disk/by-partlabel/esp-1",
-          "/dev/disk/by-partlabel/esp-2"
-        ],
-        "level": "raid1",
-        "name": "md-esp",
-        "options": [
-          "--metadata=1.0"
-        ]
-      },
       {
         "devices": [
           "/dev/disk/by-partlabel/boot-1",
@@ -334,15 +324,17 @@ The Dracut glue already saves and restores the root filesystem contents whenever
 
 Similar to the root filesystem, the Dracut glue will save and restore the contents of `/boot` whenever the config specifies a filesystem labeled `boot` with `wipeFilesystem` set to `true`.
 
-GRUB includes a module for reading MD-RAID volumes.  However, the shipped boot sector is hardcoded to set `prefix` to the first boot disk, and we want to replicate the boot sector via a bit-for-bit copy (see below).  Therefore, we'll create the RAID volume with metadata format 1.0, which puts the RAID superblock at the end of the partition.  This allows GRUB to treat individual `/boot` replicas as independent filesystems, provided that the RAID module is _not_ preloaded into the BIOS boot partition.  (It currently is not.)
+GRUB includes a module for reading MD-RAID volumes, and we want to use it, since it will read from any available replica.  However, the shipped boot sector is hardcoded to set `prefix` to the first boot disk, and we want to replicate the boot sector via a bit-for-bit copy (see below).  For now, we'll create the RAID volume with metadata format 1.0, which puts the RAID superblock at the end of the partition, and allows GRUB to treat individual `/boot` replicas as independent filesystems.  We'll modify the GRUB configs so UEFI boot always treats `/boot` as a RAID, and BIOS boot treats it as a RAID after the `normal` module and `grub.cfg` are loaded.  That leaves a window during BIOS boots where boot will fail if the first enumerated device doesn't work.  Once bootupd knows how to update BIOS GRUB, we can close the vulnerability window by having bootupd reinstall GRUB during the first boot (see [coreos/fedora-coreos-tracker#702](https://github.com/coreos/fedora-coreos-tracker/issues/702)).
 
-`/boot` replication prevents the use of the grubenv mechanism.  If GRUB treats the replicas as independent filesystems, grubenv will cause the RAID to desynchronize.  Alternatively, if we were to use the GRUB RAID module, GRUB would [disable grubenv support](https://www.gnu.org/software/grub/manual/grub/grub.html#Environment-block).
+`/boot` replication prevents the use of the grubenv mechanism, as GRUB [disables grubenv support](https://www.gnu.org/software/grub/manual/grub/grub.html#Environment-block) when RAID is in use.
 
 ## EFI System Partition
 
-The Dracut glue will save the contents of the ESP filesystem whenever the config specifies a filesystem labeled `EFI-SYSTEM` with `wipeFilesystem` set to `true`.
+The Dracut glue will save the contents of the ESP filesystem whenever the config specifies a partition with the ESP type GUID, and will restore those contents to _every_ partition with that type GUID.
 
-UEFI firmware doesn't understand MD-RAID.  Therefore, we'll create the RAID volume with metadata format 1.0, which puts the RAID superblock at the end of the partition.  This allows the firmware to pick an ESP replica and use it directly.  If the firmware decides to write to the ESP (which shouldn't generally happen) the RAID will desynchronize until the next resync.
+Thus the ESP won't be RAIDed; we'll create multiple independent filesystems with identical directory trees.  Keeping each replica independent avoids RAID desynchronization if the firmware chooses to modify the ESP, and makes sense because CoreOS does not modify the ESP after installation.  Since there will no longer be a single canonical ESP, we'll no longer automount `/boot/efi` in the running system (see [coreos/fedora-coreos-tracker#694](https://github.com/coreos/fedora-coreos-tracker/issues/694)).
+
+When updating the bootloader, bootupd will need to find each partition with an ESP type GUID and update it independently.  This assumes that all ESPs on the system are controlled by CoreOS.
 
 Per the usual Ignition philosophy, the copy logic will fail if the source ESP is missing.  If we decide to [drop the ESP in AWS images](https://github.com/coreos/fedora-coreos-config/pull/407) and want to support mirrored boot disks in AWS, we'll need to provide an alternative `layout` without an ESP.
 
@@ -352,7 +344,7 @@ The Dracut glue will save an image of the BIOS boot partition whenever the confi
 
 The BIOS Boot partition is not updated at runtime, so RAID is not necessary.  When updating the bootloader, bootupd will need to find each BIOS Boot type GUID and update both the partition and the corresponding boot sector.  This assumes that the system is not dual-booting and belongs entirely to CoreOS.
 
-For simplicity, we're copying the BIOS Boot partition and boot sector bit-for-bit, rather than rerunning `grub-install` from the initrd or hand-modifying the boot sector.  Since the boot sector hardcodes the offset of the BIOS Boot partition, the latter must be recreated at the same offset as the original partition.  To avoid hardcoding an awkward constant in FCCT, we'll move the BIOS boot partition from its current offset of 512 MiB to the beginning of the disk (offset 1 MiB) in new images.  The Dracut glue will detect relocation of the BIOS boot partition and fail the boot.
+We're currently copying the BIOS Boot partition and boot sector bit-for-bit, rather than rerunning `grub-install` from the initrd or hand-modifying the boot sector.  Since the boot sector hardcodes the offset of the BIOS Boot partition, the latter must be recreated at the same offset as the original partition.  To avoid hardcoding an awkward constant in FCCT, we'll move the BIOS boot partition from its current offset of 512 MiB to the beginning of the disk (offset 1 MiB) in new images.  The Dracut glue will detect relocation of the BIOS boot partition and fail the boot.
 
 There's no BIOS boot partition in 4Kn images.  We could work around this, but to reduce the test matrix, we'll add an empty BIOS boot partition to the 4Kn image.
 
