@@ -28,7 +28,7 @@ Under the axiom that the state of a build is usually determined from the point-o
 
 ## `cosalib.meta` library
 
-`cmd-meta` currently uses the [`cosalib.meta`](https://github.com/coreos/coreos-assembler/blob/master/src/cosalib/meta.py) library for reading and writing `meta.json`. To support merging of `meta.json` files, the library will be updated to allow for merging in-memory updates with on-disk content.
+`cmd-meta` currently uses the [`cosalib.meta`](https://github.com/coreos/coreos-assembler/blob/main/src/cosalib/meta.py) library for reading and writing `meta.json`. To support merging of `meta.json` files, the library will be updated to allow for merging in-memory updates with on-disk content.
 
 Only `meta.json` that is validated will be merged under the following rules:
 - source and destination meta must match the buildid, name and ostree commit
