@@ -32,6 +32,12 @@ For those who e.g. want to install custom agents or nontrivial amounts of code (
 
 # Example via Dockerfile
 
+One goal the current CoreOS team has in this is to still preserve the distinction we have between "base image" and user content.
+This argues for a declarative input that only allows controlled mutation.
+
+However, `Dockerfile` is the lowest common denominator in the container ecosystem.
+To truly illustrate the goal of supporting arbitrary inputs, we must support it.
+
 [fcos-derivation-example](https://github.com/cgwalters/fcos-derivation-example) contains an example `Dockerfile` that builds a Go binary and injects it along with a corresponding systemd unit as a layer, building on top of Fedora CoreOS.
 
 For ease of reference, a copy of the above is inline here:
