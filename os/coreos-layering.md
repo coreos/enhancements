@@ -7,6 +7,8 @@ This enhancement proposes:
 - Support for switching a FCOS system to use a custom image on firstboot via Ignition
 - zincati will continue to perform upgrades by inspecting the upgrade graph from the base image.
 
+This builds on [Fedora Changes/OstreeNativeContainer](https://fedoraproject.org/wiki/Changes/OstreeNativeContainer).
+
 # Existing work
 
 Originally, https://github.com/coreos/fedora-coreos-tracker/issues/812 tracked native support for "encapsulating" ostree commits in containers.
@@ -51,7 +53,7 @@ RUN yum -y install go-toolset
 RUN go build hello-world.go
 
 # In the future, this would be e.g. quay.io/coreos/fedora:stable
-FROM quay.io/cgwalters/fcos-dev
+FROM quay.io/cgwalters/fcos
 # Inject it into Fedora CoreOS
 COPY --from=builder /build/hello-world /usr/bin
 # And add our unit file
@@ -97,6 +99,8 @@ RUN ignition --write-filesystem /tmp/ignition.json && rm -f /tmp/ignition.json
 Another option is to support being run nested inside an existing container tool, similar to
 [kaniko](https://github.com/GoogleContainerTools/kaniko).  Then no
 `Dockerfile` would be needed.
+
+[More information on nesting container builds](https://www.redhat.com/sysadmin/podman-inside-kubernetes).
 
 # Use of CoreOS disk/boot images
 
