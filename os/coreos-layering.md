@@ -33,7 +33,7 @@ For those who e.g. want to install custom agents or nontrivial amounts of code (
 # Example via Dockerfile
 
 One goal the current CoreOS team has in this is to still preserve the distinction we have between "base image" and user content.
-This argues for a declarative input that only allows controlled mutation.
+This argues for a declarative input that only allows controlled mutation. See the next section about this.
 
 However, `Dockerfile` is the lowest common denominator in the container ecosystem.
 To truly illustrate the goal of supporting arbitrary inputs, we must support it.
