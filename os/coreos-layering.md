@@ -61,6 +61,13 @@ ADD hello-world.service /etc/systemd/system/hello-world.service
 RUN rpm -Uvh https://kojipkgs.fedoraproject.org//packages/strace/5.14/1.fc34/x86_64/strace-5.14-1.fc34.x86_64.rpm
 ```
 
+# Controlled mutation
+
+One of the primary advantages of the `Dockerfile` layering approach is that it allows direct filesystem modifications. However, we should distinguish between layering things (e.g. `/etc` files, or third-party daemon) and modifying base content (e.g. fast-track kernel hotfix), which has a higher likelihood of invalidating our CI process. In a cluster context for example, it's possible that a cluster admin may want to permit users only certain modifications.
+
+It is expected that control mechanisms will be integrated, though it's still not clear how that will look. It may be inside rpm-ostree (e.g. requiring override switches when first rebasing to the pullspec, and/or requiring a specific label on the image), or as part of the image build process itself (e.g. as part of [finalization](https://github.com/ostreedev/ostree-rs-ext/issues/159)). Of course, higher-level interfaces may enforce even stricter guidelines or only accept easily verifiable configs such as Butane/Ignition (see Butane example below).
+
+Ideally, it shouldn't be difficult for an FCOS/RHCOS user to query the kinds of mutations inside a container image, and this could then be displayed in a succinct way as part of `rpm-ostree status` when rebased onto it.
 # Derivation versus Ignition/Butane
 
 This proposal does not replace Ignition.  Ignition will still play at least two key roles:
